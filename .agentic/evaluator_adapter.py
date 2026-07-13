@@ -63,7 +63,7 @@ def load_request(path: Path) -> dict[str, Any]:
     _tasks(request.get("tasks"))
     _safe(request.get("method"), SAFE_PROFILE, "method")
     _safe(request.get("model"), SAFE_MODEL, "model")
-    _safe(request.get("environment_profile", "environment"), SAFE_PROFILE, "environment_profile")
+    _safe(request.get("environment_profile", "environment_gcloud"), SAFE_PROFILE, "environment_profile")
     n_cases = request.get("n_cases")
     if not isinstance(n_cases, int) or isinstance(n_cases, bool) or not 1 <= n_cases <= 10_000:
         raise ContractError("n_cases must be an integer from 1 through 10000")
@@ -111,7 +111,7 @@ def _trusted_task(repo_root: Path, task: str) -> None:
 def materialize_experiment(repo_root: Path, native_root: Path, request: dict[str, Any]) -> Path:
     method = str(request["method"])
     model = str(request["model"])
-    environment_profile = str(request.get("environment_profile") or "environment")
+    environment_profile = str(request.get("environment_profile") or "environment_gcloud")
     source_agent = _trusted_profile(repo_root, "agents", method)
     environment = _trusted_profile(repo_root, "environments", environment_profile)
     tasks = _tasks(request["tasks"])
@@ -274,7 +274,7 @@ def write_manifest(
             "native_runner": "uv run python -m ale_run run",
             "adapter": ".agentic/evaluator_adapter.py",
             "adapter_contract": "ale-native-evaluator-adapter-v1",
-            "environment_profile": request.get("environment_profile") or "environment",
+            "environment_profile": request.get("environment_profile") or "environment_gcloud",
             "native_return_code": native_return_code,
             "request_sha256": hashlib.sha256(json.dumps(request, sort_keys=True).encode("utf-8")).hexdigest(),
         },
