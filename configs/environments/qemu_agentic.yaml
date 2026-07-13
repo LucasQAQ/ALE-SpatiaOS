@@ -1,0 +1,31 @@
+# Data Layer integration profile for ALE's native local QEMU/KVM provider.
+# The caller must explicitly select this profile and provide ALE_QEMU_ROOT.
+# Keeping the cache root external prevents large immutable guest disks from
+# consuming either the Data Layer repository or the host system disk.
+snapshots:
+  cpu-free-ubuntu:
+    provider: qemu
+    image: ale-ubuntu22
+    qemu:
+      disk_source: hf://agents-last-exam/ale-images-qcow2/ale-ubuntu22.qcow2
+      hf_revision: 31374caa105f15c9cf3c20fe6abcf9e40ec1a636
+      root: ${env:ALE_QEMU_ROOT}
+      runner_image: agentslastexam/ale-qemu:0.2.0
+      runner_pull_policy: missing
+      shm_size: 2g
+      ready_timeout_s: 900
+
+  cpu-free:
+    provider: qemu
+    image: ale-win10
+    qemu:
+      disk_source: hf://agents-last-exam/ale-images-qcow2/ale-win10.qcow2
+      hf_revision: 31374caa105f15c9cf3c20fe6abcf9e40ec1a636
+      root: ${env:ALE_QEMU_ROOT}
+      runner_image: agentslastexam/ale-qemu:0.2.0
+      runner_pull_policy: missing
+      shm_size: 2g
+      ready_timeout_s: 900
+
+task_data_source: baked_in_sandbox
+output_path: local

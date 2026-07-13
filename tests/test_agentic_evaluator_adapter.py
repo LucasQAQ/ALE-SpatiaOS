@@ -41,6 +41,29 @@ def test_materialized_experiment_preserves_native_defaults(tmp_path):
     assert generated_agent["model"] == "none"
 
 
+def test_qemu_agentic_profile_uses_external_pinned_cache(tmp_path, monkeypatch):
+    from ale_run.orchestration.config_loader import load_experiment
+
+    cache_root = tmp_path / "qemu-cache"
+    monkeypatch.setenv("ALE_QEMU_ROOT", str(cache_root))
+    payload = request()
+    payload.update({
+        "tasks": ["engineering/robotics_blender_tabletop_reconstruction"],
+        "method": "codex",
+        "model": "openai/gpt-5.5",
+        "environment_profile": "qemu_agentic",
+    })
+
+    experiment = load_experiment(adapter.materialize_experiment(ROOT, tmp_path / "native", payload))
+    provider = experiment.environment.provider_specs["qemu"]
+    windows = provider.config["snapshots"]["cpu-free"]
+
+    assert experiment.agents[0].config["model"] == "openai/gpt-5.5"
+    assert windows["root"] == str(cache_root)
+    assert windows["hf_revision"] == "31374caa105f15c9cf3c20fe6abcf9e40ec1a636"
+    assert windows["runner_image"] == "agentslastexam/ale-qemu:0.2.0"
+
+
 def test_request_rejects_arbitrary_paths_and_case_indices(tmp_path):
     path = tmp_path / "request.json"
     payload = request()
