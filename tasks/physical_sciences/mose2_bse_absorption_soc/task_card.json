@@ -7,14 +7,14 @@
     "NumPy",
     "Python"
   ],
-  "taskPrompt": "You are a computational materials scientist working on a Linux VM.\n\n## Your Task\nCompute the SOC-enabled GW-BSE optical response of monolayer MoSe2 from the staged structure and pseudopotentials.\n\n## Input Files\n- MoSe2 structure: `base/input/MoSe2.vasp`\n- Mo pseudopotential: `base/input/Mo.soc.upf`\n- Se pseudopotential: `base/input/Se.soc.upf`\n\n## Software\nUse the task-local command-line tools staged here:\n- `base/software/bin/pw.x`\n- `base/software/bin/mpirun`\n- `base/software/bin/epsilon.cplx.x`\n- `base/software/bin/sigma.cplx.x`\n- `base/software/bin/kernel.cplx.x`\n- `base/software/bin/absorption.cplx.x`\n\n## What You Must Do\n1. Create the missing Quantum ESPRESSO and BerkeleyGW input decks from scratch.\n2. Run the monolayer MoSe2 QE workflow with explicit SOC / noncollinear settings.\n3. Run the BerkeleyGW workflow needed for the required BSE absorption output, including the 2D truncation treatment.\n4. Save the required outputs exactly under `base/output`.\n\n## Required Output Files\n- `base/output/MoSe2_bands.dat.gnu`\n- `base/output/MoSe2_bands.png`\n- `base/output/absorption_eh.dat`\n- `base/output/exciton_absorption_spectra_avg.png`\n\nDo not write outputs outside `base/output`.",
+  "taskPrompt": "You are a computational materials scientist working on a Linux VM.\n\n## Your Task\nCompute the SOC-enabled GW-BSE optical response of monolayer MoSe2 from the staged structure and pseudopotentials.\n\n## Input Files\n- MoSe2 structure: `base/input/MoSe2.vasp`\n- Mo pseudopotential: `base/input/Mo.soc.upf`\n- Se pseudopotential: `base/input/Se.soc.upf`\n\n## Software\nUse the task-local command-line tools staged here:\n- `base/software/bin/pw.x`\n- `base/software/bin/mpirun`\n- `base/software/bin/epsilon.cplx.x`\n- `base/software/bin/sigma.cplx.x`\n- `base/software/bin/kernel.cplx.x`\n- `base/software/bin/absorption.cplx.x`\n\n## What You Must Do\n1. Create the missing Quantum ESPRESSO and BerkeleyGW input decks from scratch.\n2. Run the monolayer MoSe2 QE workflow with explicit SOC / noncollinear settings.\n3. Run the BerkeleyGW workflow needed for the required BSE absorption output, including the 2D truncation treatment.\n4. Save the required outputs exactly under `base/output`.\n\n## Required Output Files\n- `base/output/MoSe2_bands.dat.gnu`\n- `base/output/MoSe2_bands.png`\n- `base/output/absorption_eh.dat`\n- `base/output/exciton_absorption_spectra_avg.png`\n\nDo not write outputs outside `base/output`.\n",
   "agentMustDo": [
     "Read the staged input files under `input/`.",
     "Create the missing QE and BerkeleyGW input decks from scratch. At minimum this includes QE SCF and NSCF inputs with explicit SOC/noncollinear settings plus BerkeleyGW inputs for `epsilon`, `sigma`, `kernel`, and `absorption`.",
     "Run the QE mean-field workflow for monolayer MoSe2 with explicit SOC to generate the charge density and wavefunctions.",
     "Run the BerkeleyGW GW+BSE workflow for monolayer MoSe2, including the 2D truncation treatment and benchmark-scale reference settings from the original prompt such as `16x16x1` k-point sampling, about `2500` GW summation bands, `32x32x1` fine-grid interpolation, and screened Coulomb cutoff near `25 Ry`.",
-    "Produce the required band and absorption outputs with the filenames expected by the hidden reference.",
-    "Write the required output files under `output/` with the same filenames as the staged hidden reference data."
+    "Write the required output files under `output/` using the filenames documented in the task materials.",
+    "Write the required output files under `output/` using the filenames documented in the task materials."
   ],
   "inputFiles": [
     {
@@ -44,7 +44,7 @@
       "description": "Includes absorption_eh.dat, MoSe2_bands.dat.gnu, MoSe2_bands.png, exciton_absorption_spectra_avg.png"
     }
   ],
-  "evaluation": "**Hard gate conditions** (auto score=0 if triggered):\n- `output/` is missing\n- any required filename is missing from `output/`\n- any required text output is unparsable or empty\n\n**Scoring method:**\n- Required file set: `absorption_eh.dat`, `MoSe2_bands.dat.gnu`, `MoSe2_bands.png`, `exciton_absorption_spectra_avg.png`.\n- Numeric scoring is based on `absorption_eh.dat` and `MoSe2_bands.dat.gnu` only. Parse whitespace-delimited numeric tables, require the same row count and column count as the matching hidden reference, and require every numeric value to match within `rtol=1e-4` and `atol=5e-3`.\n- Plot outputs (`MoSe2_bands.png`, `exciton_absorption_spectra_avg.png`) are required for task completeness and must exist with the exact expected filename and a non-zero file size.\n- Final score is binary: `1.0` only if every required file passes its check after the hard-gate conditions; otherwise `0.0`.\n- Scientific sanity targets for manual review: MoSe2 should show a direct K-point gap near `1.33 eV` in the mean-field band structure and a sharp excitonic absorption peak near `1.61 eV` when electron-hole interaction is included.\n\n- **Where does the main scoring logic run?** local Python evaluation\n- **If any scoring step runs on the VM, why is that exception necessary?** none planned\n\n**What does a PERFECT output look like?**\nEvery required output file is present in the correct location and matches the hidden reference for this task. Perfect score = `1.0`.\n\n**What does a WRONG/empty output look like?**\nMissing files, empty placeholder outputs, or obviously wrong numeric curves should drive the score toward `0.0`.",
+  "evaluation": "**Hard gate conditions** (auto score=0 if triggered):\n- `output/` is missing\n- any required filename is missing from `output/`\n- any required text output is unparsable or empty\n- either required plot is empty or is not a PNG\n\n**Scoring method:**\n- Keep the existing four-file output contract.\n- Extract the direct band gap, coincidence of the band edges, spin-orbit splittings, the first two prominent excitonic features, and their separation.\n- Compare the absorption spectrum to the hidden reference only after interpolation to a common energy grid and normalization; row counts, sampling grids, absolute intensity scale, and individual floating-point values do not need to match.\n- Score the physical observables and normalized spectral shape continuously against hidden acceptable ranges.\n- Final score is continuous from `0.0` to `1.0`; `0.70` is the pass threshold after hard gates.\n\n- **Where does the main scoring logic run?** local Python evaluation\n- **If any scoring step runs on the VM, why is that exception necessary?** none planned\n\n**What does a PERFECT output look like?**\nEvery required output is present and the extracted SOC band and excitonic observables are physically consistent.\n\n**What does a WRONG/empty output look like?**\nMissing files, empty placeholders, unparsable tables, invalid plots, or physically inconsistent bands and spectra score `0.0`.",
   "vm": {
     "machineType": "c4-standard-16",
     "snapshot": "cpu-free-ubuntu",
@@ -72,9 +72,5 @@
       },
       "rationale": "The task involves computational materials science focusing on optical response in materials."
     }
-  },
-  "requiredSystemPackages": [
-    "micromamba",
-    "qe-bgw-6.7.0-4.0"
-  ]
+  }
 }
