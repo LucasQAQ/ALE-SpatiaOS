@@ -1,0 +1,18 @@
+schema_version: agentic-component-v1
+component: ale
+owner: agents-last-exam
+interfaces:
+  evaluator:
+    adapter_id: ale_native_v1
+    request_schema: agentic-sandbox-evaluator-request-v0
+    result_schema: agentic-evaluator-result-v1
+    entrypoint: .agentic/evaluator-adapter
+    native_runner: uv run python -m ale_run run
+    contract_check:
+      - .agentic/evaluator-adapter
+      - --contract-check
+boundaries:
+  agent_owner: ale
+  metrics_owner: ale
+  vm_docker_owner: ale
+  data_layer_role: schedule_collect_normalize_register

@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Execute the ALE evaluator adapter in the repository's locked uv environment."""
+
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+import subprocess
+from pathlib import Path
+
+
+root = Path(__file__).resolve().parents[1]
+lock_path = root / "uv.lock"
+if not lock_path.is_file():
+    raise SystemExit("ALE adapter requires the integration branch uv.lock")
+lock_hash = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+cache_root = Path(
+    os.environ.get("ALE_AGENTIC_ENV_ROOT", Path.home() / ".cache" / "agentic-components" / "ale")
+).resolve()
+mode = "base" if "--contract-check" in os.sys.argv[1:] else "full"
+environment = cache_root / (f"{lock_hash}-base" if mode == "base" else lock_hash)
+environment.mkdir(parents=True, exist_ok=True, mode=0o700)
+lock_file = environment / "provision.lock"
+with lock_file.open("a+", encoding="utf-8") as handle:
+    fcntl.flock(handle, fcntl.LOCK_EX)
+    marker = environment / "ready.json"
+    python = environment / ".venv" / "bin" / "python"
+    ready = False
+    if marker.is_file() and python.is_file():
+        try:
+            state = json.loads(marker.read_text(encoding="utf-8"))
+            ready = state.get("lock_sha256") == lock_hash and state.get("mode", "full") == mode
+        except (OSError, json.JSONDecodeError):
+            ready = False
+    if not ready:
+        child_env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(environment / ".venv")}
+        sync_command = ["uv", "sync", "--frozen"]
+        if mode == "full":
+            sync_command.insert(2, "--all-packages")
+        completed = subprocess.run(
+            sync_command,
+            cwd=root,
+            env=child_env,
+            check=False,
+        )
+        if completed.returncode != 0 or not python.is_file():
+            raise SystemExit("failed to provision the lock-pinned ALE adapter environment")
+        temporary = environment / f"ready.json.{os.getpid()}.tmp"
+        temporary.write_text(json.dumps({"lock_sha256": lock_hash, "mode": mode}) + "\n", encoding="utf-8")
+        temporary.replace(marker)
+os.chdir(root)
+os.execv(
+    python,
+    [
+        str(python),
+        str(root / ".agentic" / "evaluator_adapter.py"),
+        *os.sys.argv[1:],
+    ],
+)
