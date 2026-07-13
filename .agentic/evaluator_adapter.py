@@ -149,6 +149,15 @@ def build_native_command(repo_root: Path, experiment_path: Path) -> list[str]:
     ]
 
 
+def native_environment(source: dict[str, str] | None = None) -> dict[str, str]:
+    """Map the adapter-scoped image credential to Hugging Face's native name."""
+    environment = dict(source if source is not None else os.environ)
+    ale_token = environment.pop("ALE_HF_TOKEN", "")
+    if ale_token and not environment.get("HF_TOKEN"):
+        environment["HF_TOKEN"] = ale_token
+    return environment
+
+
 def _git_commit(repo_root: Path) -> str | None:
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -298,7 +307,15 @@ def run(request_path: Path, repo_root: Path) -> int:
         (logs / "stdout.txt").open("w", encoding="utf-8") as stdout,
         (logs / "stderr.txt").open("w", encoding="utf-8") as stderr,
     ):
-        completed = subprocess.run(command, cwd=repo_root, stdout=stdout, stderr=stderr, text=True, check=False)
+        completed = subprocess.run(
+            command,
+            cwd=repo_root,
+            stdout=stdout,
+            stderr=stderr,
+            text=True,
+            check=False,
+            env=native_environment(),
+        )
     manifest = write_manifest(native_root, repo_root, request, completed.returncode)
     return 0 if manifest["status"] != "failed" else 1
 

@@ -64,6 +64,17 @@ def test_qemu_agentic_profile_uses_external_pinned_cache(tmp_path, monkeypatch):
     assert windows["runner_image"] == "agentslastexam/ale-qemu:0.2.0"
 
 
+def test_native_environment_maps_only_the_ale_scoped_hf_token():
+    environment = adapter.native_environment({"ALE_HF_TOKEN": "scoped", "PATH": "/bin"})
+    assert environment["HF_TOKEN"] == "scoped"
+    assert "ALE_HF_TOKEN" not in environment
+    assert environment["PATH"] == "/bin"
+
+    existing = adapter.native_environment({"ALE_HF_TOKEN": "scoped", "HF_TOKEN": "native"})
+    assert existing["HF_TOKEN"] == "native"
+    assert "ALE_HF_TOKEN" not in existing
+
+
 def test_request_rejects_arbitrary_paths_and_case_indices(tmp_path):
     path = tmp_path / "request.json"
     payload = request()

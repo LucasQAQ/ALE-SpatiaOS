@@ -1,5 +1,8 @@
 # Data Layer integration profile for ALE's native local QEMU/KVM provider.
 # The caller must explicitly select this profile and provide ALE_QEMU_ROOT.
+# Gated image access through the Data Layer adapter uses ALE_HF_TOKEN; the
+# adapter maps it to the native Hugging Face client without widening the
+# service credential allowlist.
 # Keeping the cache root external prevents large immutable guest disks from
 # consuming either the Data Layer repository or the host system disk.
 snapshots:
