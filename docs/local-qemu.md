@@ -15,7 +15,8 @@ normal cleanup.
 - `/dev/kvm` present and passable through the Docker daemon
 - Sufficient RAM for the task-card machine shape
 - Sufficient disk for the cached base images
-- `huggingface-hub` for `hf://` disks, installed with the project dependencies
+- `huggingface-hub` and HTTPX SOCKS support for `hf://` disks, installed with
+  the project dependencies
 - `gcloud` or `gsutil` when `qemu.disk_source` is a `gs://` URI
 
 The published base images are:
