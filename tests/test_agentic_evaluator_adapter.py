@@ -170,7 +170,7 @@ def test_native_fixture_is_indexed_without_recomputing_score(tmp_path):
     assert len(cells) == 1
     assert cells[0]["case_id"] == "demo/hello#v0"
     assert cells[0]["metrics"] == {"score": 0.75}
-    assert cells[0]["status"] == "pass"
+    assert cells[0]["status"] == "evaluated"
     assert all(not item["path"].endswith("escaped.txt") for item in cells[0]["artifacts"])
 
 

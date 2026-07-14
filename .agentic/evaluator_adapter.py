@@ -217,7 +217,9 @@ def _artifacts(native_root: Path, run_dir: Path) -> list[dict[str, str]]:
 def _status(run_meta: dict[str, Any], eval_result: dict[str, Any]) -> str:
     status = str(run_meta.get("status") or "")
     if status == "completed":
-        return "pass"
+        # ALE rewards may be binary or continuous and use task-specific thresholds.
+        # Report successful metric production without inventing a global verdict.
+        return "evaluated"
     if status in {"failed", "timeout"}:
         return "fail"
     if status in {"cancelled", "not_executed"}:
