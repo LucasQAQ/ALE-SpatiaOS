@@ -5,7 +5,8 @@ The deployer ensures the running ``codex`` is exactly the pinned fork build
 fork native binary from a GitHub Release when missing/stale/stock (installing
 stock from NPM first if nothing is on PATH), else skips the download. The fork =
 openai/codex ``main`` + Windows ``apply_patch.exe`` fix + OpenRouter MCP
-adaptation (see CodexConfig).
+adaptation (see CodexConfig). Transient release downloads use bounded retries;
+the asset SHA-256 is verified before either npm vendor binary is replaced.
 
 OpenRouter routing: ``OPENROUTER_API_KEY`` + ``config.toml`` with
 ``model_provider = "openrouter"`` and a custom model_providers block. Direct
@@ -20,6 +21,7 @@ per line).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -49,6 +51,8 @@ logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_S = 2.0
 _TERM_GRACE_S = 2.0
+_PATCH_DOWNLOAD_ATTEMPTS = 3
+_PATCH_DOWNLOAD_BACKOFF_S = 5.0
 
 # npm-installed native binary paths (Linux).
 # npm 11.x stopped hoisting platform deps so the nested copy is the one
@@ -72,6 +76,14 @@ _VENDOR_BINARY_WIN_NESTED = (
     r"\node_modules\@openai\codex-win32-x64"
     r"\vendor\x86_64-pc-windows-msvc\codex\codex.exe"
 )
+
+
+def _file_sha256(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class CodexDeployer(BaseAgentDeployer):
@@ -129,6 +141,10 @@ class CodexDeployer(BaseAgentDeployer):
             cfg.patched_binary_url_windows if self._is_windows
             else cfg.patched_binary_url
         )
+        patched_sha256 = (
+            cfg.patched_binary_sha256_windows if self._is_windows
+            else cfg.patched_binary_sha256
+        )
         codex_path = shutil.which("codex")
         already_current = bool(codex_path) and await self._version_matches(
             codex_path, cfg.fork_version
@@ -161,12 +177,12 @@ class CodexDeployer(BaseAgentDeployer):
 
         # 2. Overlay the fork native binary when needed (missing/stale/stock).
         if need_overlay:
-            if not patched_url:
+            if not patched_url or not patched_sha256:
                 raise RuntimeError(
-                    "codex: need the fork binary but patched_binary_url is empty "
+                    "codex: need the fork binary but its URL or SHA-256 is empty "
                     f"(running codex is not pinned {cfg.fork_version})"
                 )
-            await self._replace_native_binary(patched_url)
+            await self._replace_native_binary(patched_url, patched_sha256)
 
         # 3. Verify codex --version is now the pinned fork (ensure latest or fail
         # loudly — never silently run a stale build).
@@ -240,12 +256,13 @@ class CodexDeployer(BaseAgentDeployer):
             if npm_bin and npm_bin not in os.environ.get("PATH", ""):
                 os.environ["PATH"] = f"{npm_bin}{sep}{os.environ.get('PATH', '')}"
 
-    async def _replace_native_binary(self, url: str) -> None:
-        """Download a patched binary from URL and replace the vendor copy.
+    async def _replace_native_binary(self, url: str, expected_sha256: str) -> None:
+        """Download a verified patched binary and replace the vendor copy.
 
         Tries both the top-level and nested npm vendor paths. On Linux,
         vendor dirs are typically root-owned, so we stage to /tmp and
-        use sudo -n mv if needed.
+        use sudo when needed. Raises when download, digest verification, or
+        replacement fails so a stock or stale build cannot run.
         """
         # Single source of OS truth: the sandbox flag set in install() (the
         # deployer runs in-VM, so this matches the running platform).
@@ -261,41 +278,65 @@ class CodexDeployer(BaseAgentDeployer):
         fd, staged = tempfile.mkstemp(prefix="codex-patched-", suffix=".bin")
         os.close(fd)
         try:
-            dl = await asyncio.to_thread(
-                subprocess.run,
-                ["curl", "-fsSL", "-o", staged, url],
-                capture_output=True, text=True, timeout=600,
-            )
-            if dl.returncode != 0:
-                logger.warning(
-                    "codex: failed to download patched binary from %s (rc=%d): %s",
-                    url, dl.returncode, (dl.stderr or "")[:300],
+            dl = None
+            for attempt in range(1, _PATCH_DOWNLOAD_ATTEMPTS + 1):
+                dl = await asyncio.to_thread(
+                    subprocess.run,
+                    [
+                        "curl", "-fsSL", "--connect-timeout", "60",
+                        "--max-time", "600", "-o", staged, url,
+                    ],
+                    capture_output=True, text=True, timeout=630,
                 )
-                return
+                if dl.returncode == 0:
+                    break
+                logger.warning(
+                    "codex: pinned binary download attempt %d/%d failed "
+                    "from %s (rc=%d): %s",
+                    attempt, _PATCH_DOWNLOAD_ATTEMPTS, url, dl.returncode,
+                    (dl.stderr or "")[:300],
+                )
+                if attempt < _PATCH_DOWNLOAD_ATTEMPTS:
+                    await asyncio.sleep(_PATCH_DOWNLOAD_BACKOFF_S * attempt)
+            if dl is None or dl.returncode != 0:
+                raise RuntimeError(
+                    "codex: failed to download the pinned fork binary after "
+                    f"{_PATCH_DOWNLOAD_ATTEMPTS} attempts: {(dl.stderr or '')[:300]}"
+                )
+
+            actual_sha256 = await asyncio.to_thread(_file_sha256, staged)
+            if actual_sha256.lower() != expected_sha256.lower():
+                raise RuntimeError(
+                    "codex: downloaded fork binary SHA-256 mismatch "
+                    f"(expected {expected_sha256.lower()}, got {actual_sha256})"
+                )
+
             if not is_linux:
                 # Windows: user-owned npm vendor dirs, no sudo/chmod needed.
+                existing = [vp for vp in vendor_paths if os.path.isfile(vp)]
+                if not existing:
+                    raise RuntimeError("codex: no Windows vendor binary found to replace")
                 replaced = 0
-                for vp in vendor_paths:
-                    if not os.path.isfile(vp):
-                        logger.info("codex: vendor path not present, skipping: %s", vp)
-                        continue
+                for vp in existing:
                     try:
                         shutil.copyfile(staged, vp)
                         logger.info("codex: replaced vendor binary at %s", vp)
                         replaced += 1
                     except OSError as exc:
                         logger.warning("codex: could not replace %s: %s", vp, exc)
-                if replaced == 0:
-                    logger.warning("codex: no vendor binaries replaced (Windows)")
+                if replaced != len(existing):
+                    raise RuntimeError(
+                        f"codex: replaced {replaced}/{len(existing)} Windows vendor binaries"
+                    )
                 return
             # Make executable
             os.chmod(staged, 0o755)
 
+            existing = [vp for vp in vendor_paths if os.path.isfile(vp)]
+            if not existing:
+                raise RuntimeError("codex: no Linux vendor binary found to replace")
             replaced = 0
-            for vp in vendor_paths:
-                if not os.path.isfile(vp):
-                    logger.info("codex: vendor path not present, skipping: %s", vp)
-                    continue
+            for vp in existing:
                 try:
                     # Try direct copy first
                     proc = await asyncio.to_thread(
@@ -327,10 +368,9 @@ class CodexDeployer(BaseAgentDeployer):
                 except Exception as exc:
                     logger.warning("codex: error replacing %s: %s", vp, exc)
 
-            if replaced == 0:
-                logger.warning(
-                    "codex: no vendor binaries were replaced -- "
-                    "has npm install -g @openai/codex run?"
+            if replaced != len(existing):
+                raise RuntimeError(
+                    f"codex: replaced {replaced}/{len(existing)} Linux vendor binaries"
                 )
         finally:
             try:

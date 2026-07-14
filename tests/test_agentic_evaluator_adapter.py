@@ -63,6 +63,12 @@ def test_qemu_agentic_profile_uses_external_pinned_cache(tmp_path, monkeypatch):
     assert agent_config["fork_version"] == "0.0.0-agenthle-20260614"
     assert "v0.0.0-agenthle-20260614" in agent_config["patched_binary_url"]
     assert "v0.0.0-agenthle-20260614" in agent_config["patched_binary_url_windows"]
+    assert agent_config["patched_binary_sha256"] == (
+        "8f43bef62c01312b94c050406d5dbc43f146162a415d802abcc917abf5b8c21e"
+    )
+    assert agent_config["patched_binary_sha256_windows"] == (
+        "be19248901f59bb0238d84a757235b06815409c7c92ce33644b8066827d09752"
+    )
     assert windows["root"] == str(cache_root)
     assert windows["hf_revision"] == "31374caa105f15c9cf3c20fe6abcf9e40ec1a636"
     assert windows["runner_image"] == "agentslastexam/ale-qemu:0.2.0"

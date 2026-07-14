@@ -28,8 +28,10 @@ with a patched build (downloaded from a configured GitHub Release URL) to fix
 the `apply_patch` corruption bug on Windows. The Linux and Windows builds are
 distinct release assets (musl ELF `codex` vs `codex.exe` for
 `x86_64-pc-windows-msvc`); the deployer downloads `patched_binary_url` on
-Linux and `patched_binary_url_windows` on Windows. Replacement is a no-op when
-the matching URL is empty.
+Linux and `patched_binary_url_windows` on Windows. Transient downloads are
+retried, and the selected asset must match its pinned SHA-256 before either npm
+vendor binary is replaced. Replacement is a no-op when the matching URL is
+empty.
 
 ## Providers
 
@@ -73,6 +75,8 @@ Config fields (standalone dataclass):
 | `codex_version` | str | `"0.114.0"` | NPM package version to install |
 | `patched_binary_url` | str | `""` | GitHub Release URL for patched Linux native binary (`codex`, musl x86-64) |
 | `patched_binary_url_windows` | str | `""` | GitHub Release URL for patched Windows binary (`codex.exe`, windows-msvc); used instead of `patched_binary_url` on Windows |
+| `patched_binary_sha256` | str | pinned release digest | SHA-256 for the Linux release asset |
+| `patched_binary_sha256_windows` | str | pinned release digest | SHA-256 for the Windows release asset |
 
 ## Logs
 

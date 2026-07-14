@@ -16,5 +16,7 @@ config:
   reasoning_effort: high
   codex_version: "0.114.0"
   patched_binary_url: https://github.com/cua-verse/codex/releases/download/v0.0.0-agenthle-20260614/codex
+  patched_binary_sha256: 8f43bef62c01312b94c050406d5dbc43f146162a415d802abcc917abf5b8c21e
   patched_binary_url_windows: https://github.com/cua-verse/codex/releases/download/v0.0.0-agenthle-20260614/codex-x86_64-pc-windows-msvc.exe
+  patched_binary_sha256_windows: be19248901f59bb0238d84a757235b06815409c7c92ce33644b8066827d09752
   fork_version: "0.0.0-agenthle-20260614"

@@ -13,7 +13,7 @@ The deployer runs a pinned **fork** build of the codex CLI, not stock NPM.
 |---|---|
 | Fork source | `cua-verse/codex` branch `agenthle` = openai/codex `main` merged in + our carries |
 | Pinned version | `codex-cli 0.0.0-agenthle-20260614` (`CodexConfig.fork_version`; set in codex-rs workspace `Cargo.toml`) |
-| Distribution | Prebuilt native binary per OS, published as a GitHub Release, overlaid over the npm vendor binary |
+| Distribution | Prebuilt native binary per OS, published as a GitHub Release, SHA-256 verified, then overlaid over the npm vendor binary |
 | NPM fallback | `@openai/codex@0.114.0` — installed only when no codex is on PATH, then the fork binary is overlaid on top |
 
 Carries on top of upstream `main`:
@@ -37,7 +37,9 @@ After overlaying it re-checks `codex --version` and **hard-fails** if it still
 isn't `fork_version` — it never silently runs a stale/stock build. The fork
 binary URL per OS is `patched_binary_url` / `patched_binary_url_windows`
 (empty = skip the overlay, which then hard-fails if the running build isn't
-pinned).
+pinned). A transient download failure is retried three times with bounded
+backoff. The downloaded asset must match the corresponding pinned SHA-256
+before any vendor binary is replaced.
 
 ---
 
@@ -194,6 +196,8 @@ Notes:
 | `fork_version` | str | `"0.0.0-agenthle-20260614"` | Pinned fork build the running `codex --version` must report; drives ensure-latest (§1) |
 | `patched_binary_url` | str | fork release `…/codex` | GitHub Release URL for the fork Linux binary; overlaid when the running build ≠ `fork_version`. `""` = skip overlay |
 | `patched_binary_url_windows` | str | fork release `…/codex-…-windows-msvc.exe` | Fork Windows binary; used instead of `patched_binary_url` on Windows. `""` = skip |
+| `patched_binary_sha256` | str | pinned release digest | SHA-256 required for the Linux fork asset |
+| `patched_binary_sha256_windows` | str | pinned release digest | SHA-256 required for the Windows fork asset |
 | `model_catalog_path` | str | `""` | Host path to a Codex model-catalog JSON (for models not in codex's bundled catalog); read + sanitised host-side, shipped into the sandbox |
 | `model_catalog_content` | str | `""` | Auto-populated from `model_catalog_path` (do not set by hand) — carries the catalog text to the in-sandbox deployer |
 | `feature_overrides` | dict | `{}` | `{feature_key: bool}` written to config.toml `[features]`; force-enable/disable codex features (== tool surface). Empty = codex defaults |

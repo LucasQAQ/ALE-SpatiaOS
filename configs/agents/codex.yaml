@@ -51,10 +51,12 @@ config:
   # Patched native binary (Linux musl x86-64). Downloaded and swapped over npm's
   # bundled binary when set. "" = skip replacement, use npm's binary.
   patched_binary_url: https://github.com/cua-verse/codex/releases/download/v0.0.0-agenthle-20260614/codex
+  patched_binary_sha256: 8f43bef62c01312b94c050406d5dbc43f146162a415d802abcc917abf5b8c21e
 
   # Patched Windows binary (codex.exe, x86_64-pc-windows-msvc) — used instead of
   # patched_binary_url on Windows. "" = skip, use npm's bundled codex.exe.
   patched_binary_url_windows: https://github.com/cua-verse/codex/releases/download/v0.0.0-agenthle-20260614/codex-x86_64-pc-windows-msvc.exe
+  patched_binary_sha256_windows: be19248901f59bb0238d84a757235b06815409c7c92ce33644b8066827d09752
 
   # Unique version embedded in the pinned fork. Keep this aligned with both
   # release URLs above; the deployer hard-fails on a stale or stock binary.

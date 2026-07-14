@@ -4,10 +4,12 @@ The deployer ensures the running codex is exactly the pinned **fork** build
 (``fork_version``, e.g. ``codex-cli 0.0.0-agenthle-20260614``): it compares
 ``codex --version`` and, when the binary is missing/stale/stock, installs stock
 ``@openai/codex`` from NPM (if needed) and overlays the fork native binary from
-the GitHub Release; a matching version skips the download. The fork = openai/codex
-``main`` merged in, plus two carries: the Windows ``apply_patch.exe`` hardlink
-fix and the OpenRouter MCP adaptation (namespaced-tool flatten + dispatch
-remap). Built from cua-verse/codex ``agenthle``; published as the release below.
+the GitHub Release. Downloads are retried for transient network failures and
+checked against the pinned release-asset SHA-256 before installation. The fork
+= openai/codex ``main`` merged in, plus two carries: the Windows
+``apply_patch.exe`` hardlink fix and the OpenRouter MCP adaptation
+(namespaced-tool flatten + dispatch remap). Built from cua-verse/codex
+``agenthle``; published as the release below.
 
 Auth: OpenRouter routing uses ``OPENROUTER_API_KEY`` injected via env.
 Direct OpenAI routing uses ``OPENAI_API_KEY``.
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
@@ -49,6 +52,12 @@ _RELEASE_BASE = (
 _DEFAULT_PATCHED_BINARY_URL = f"{_RELEASE_BASE}/codex"
 _DEFAULT_PATCHED_BINARY_URL_WINDOWS = (
     f"{_RELEASE_BASE}/codex-x86_64-pc-windows-msvc.exe"
+)
+_DEFAULT_PATCHED_BINARY_SHA256 = (
+    "8f43bef62c01312b94c050406d5dbc43f146162a415d802abcc917abf5b8c21e"
+)
+_DEFAULT_PATCHED_BINARY_SHA256_WINDOWS = (
+    "be19248901f59bb0238d84a757235b06815409c7c92ce33644b8066827d09752"
 )
 
 
@@ -118,6 +127,11 @@ class CodexConfig:
     # replacement on Windows (use npm's bundled codex.exe).
     patched_binary_url_windows: str = _DEFAULT_PATCHED_BINARY_URL_WINDOWS
 
+    # SHA-256 values published with the pinned GitHub Release assets. A
+    # non-empty patched binary URL requires its matching digest.
+    patched_binary_sha256: str = _DEFAULT_PATCHED_BINARY_SHA256
+    patched_binary_sha256_windows: str = _DEFAULT_PATCHED_BINARY_SHA256_WINDOWS
+
     # Pinned fork version the running ``codex`` must report (``codex --version``).
     # The deployer ensures the engine is exactly this build: if no codex is on
     # PATH it installs stock + overlays the fork; if a codex is present but its
@@ -162,6 +176,18 @@ class CodexConfig:
     otel_enabled: bool = True
 
     def __post_init__(self) -> None:
+        for url_field, digest_field in (
+            ("patched_binary_url", "patched_binary_sha256"),
+            ("patched_binary_url_windows", "patched_binary_sha256_windows"),
+        ):
+            url = getattr(self, url_field)
+            digest = getattr(self, digest_field)
+            if url and not re.fullmatch(r"[0-9a-fA-F]{64}", digest):
+                raise ValueError(
+                    f"codex: {digest_field} must be a 64-character SHA-256 "
+                    f"when {url_field} is set"
+                )
+
         # Load the catalog host-side (build_config) and embed its content so it
         # reaches the in-sandbox deployer. On the in-sandbox reconstruction the
         # content kwarg is already populated → we skip the (host-only) file read.
