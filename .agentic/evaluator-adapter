@@ -7,8 +7,27 @@ import fcntl
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
+
+
+def resolve_uv_binary() -> Path:
+    """Resolve uv without widening the evaluator's restricted PATH."""
+    candidates = [
+        shutil.which("uv"),
+        Path.home() / ".local" / "bin" / "uv",
+        Path.home() / ".cargo" / "bin" / "uv",
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate).expanduser().resolve()
+        if path.is_file() and os.access(path, os.X_OK):
+            return path
+    raise SystemExit(
+        "ALE adapter requires uv on the system PATH or in ~/.local/bin or ~/.cargo/bin"
+    )
 
 
 root = Path(__file__).resolve().parents[1]
@@ -57,7 +76,7 @@ with lock_file.open("a+", encoding="utf-8") as handle:
             ready = False
     if not ready:
         child_env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(environment / ".venv")}
-        sync_command = ["uv", "sync", "--frozen"]
+        sync_command = [str(resolve_uv_binary()), "sync", "--frozen"]
         if mode == "full":
             sync_command.insert(2, "--all-packages")
         completed = subprocess.run(
