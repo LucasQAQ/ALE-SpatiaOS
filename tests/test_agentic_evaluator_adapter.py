@@ -58,7 +58,11 @@ def test_qemu_agentic_profile_uses_external_pinned_cache(tmp_path, monkeypatch):
     provider = experiment.environment.provider_specs["qemu"]
     windows = provider.config["snapshots"]["cpu-free"]
 
-    assert experiment.agents[0].config["model"] == "openai/gpt-5.5"
+    agent_config = experiment.agents[0].config
+    assert agent_config["model"] == "openai/gpt-5.5"
+    assert agent_config["fork_version"] == "0.0.0-agenthle-20260614"
+    assert "v0.0.0-agenthle-20260614" in agent_config["patched_binary_url"]
+    assert "v0.0.0-agenthle-20260614" in agent_config["patched_binary_url_windows"]
     assert windows["root"] == str(cache_root)
     assert windows["hf_revision"] == "31374caa105f15c9cf3c20fe6abcf9e40ec1a636"
     assert windows["runner_image"] == "agentslastexam/ale-qemu:0.2.0"
