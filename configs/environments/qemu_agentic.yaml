@@ -28,7 +28,9 @@ snapshots:
       runner_image: agentslastexam/ale-qemu:0.2.0
       runner_pull_policy: missing
       shm_size: 2g
-      ready_timeout_s: 900
+      # The published generalized Windows disk can need more than 35 minutes
+      # to finish first boot and expose CUA when started from a fresh overlay.
+      ready_timeout_s: 3600
 
 task_data_source: baked_in_sandbox
 output_path: local

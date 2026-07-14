@@ -72,6 +72,7 @@ def test_qemu_agentic_profile_uses_external_pinned_cache(tmp_path, monkeypatch):
     assert windows["root"] == str(cache_root)
     assert windows["hf_revision"] == "31374caa105f15c9cf3c20fe6abcf9e40ec1a636"
     assert windows["runner_image"] == "agentslastexam/ale-qemu:0.2.0"
+    assert windows["ready_timeout_s"] == 3600
 
 
 def test_aionly_codex_profile_routes_without_serializing_the_key(tmp_path, monkeypatch):
