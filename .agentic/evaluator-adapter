@@ -16,11 +16,27 @@ lock_path = root / "uv.lock"
 if not lock_path.is_file():
     raise SystemExit("ALE adapter requires the integration branch uv.lock")
 lock_hash = hashlib.sha256(lock_path.read_bytes()).hexdigest()
+commit_result = subprocess.run(
+    ["git", "rev-parse", "HEAD"],
+    cwd=root,
+    capture_output=True,
+    text=True,
+    timeout=10,
+    check=False,
+)
+repo_commit = commit_result.stdout.strip()
+if (
+    commit_result.returncode != 0
+    or len(repo_commit) not in (40, 64)
+    or any(character not in "0123456789abcdef" for character in repo_commit)
+):
+    raise SystemExit("ALE adapter requires a Git-backed integration checkout")
+checkout_identity = hashlib.sha256(f"{lock_hash}\n{repo_commit}\n{root}\n".encode()).hexdigest()
 cache_root = Path(
     os.environ.get("ALE_AGENTIC_ENV_ROOT", Path.home() / ".cache" / "agentic-components" / "ale")
 ).resolve()
 mode = "base" if "--contract-check" in os.sys.argv[1:] else "full"
-environment = cache_root / (f"{lock_hash}-base" if mode == "base" else lock_hash)
+environment = cache_root / (f"{checkout_identity}-base" if mode == "base" else checkout_identity)
 environment.mkdir(parents=True, exist_ok=True, mode=0o700)
 lock_file = environment / "provision.lock"
 with lock_file.open("a+", encoding="utf-8") as handle:
@@ -31,7 +47,12 @@ with lock_file.open("a+", encoding="utf-8") as handle:
     if marker.is_file() and python.is_file():
         try:
             state = json.loads(marker.read_text(encoding="utf-8"))
-            ready = state.get("lock_sha256") == lock_hash and state.get("mode", "full") == mode
+            ready = (
+                state.get("lock_sha256") == lock_hash
+                and state.get("repo_commit") == repo_commit
+                and state.get("repo_root") == str(root)
+                and state.get("mode", "full") == mode
+            )
         except (OSError, json.JSONDecodeError):
             ready = False
     if not ready:
@@ -48,7 +69,18 @@ with lock_file.open("a+", encoding="utf-8") as handle:
         if completed.returncode != 0 or not python.is_file():
             raise SystemExit("failed to provision the lock-pinned ALE adapter environment")
         temporary = environment / f"ready.json.{os.getpid()}.tmp"
-        temporary.write_text(json.dumps({"lock_sha256": lock_hash, "mode": mode}) + "\n", encoding="utf-8")
+        temporary.write_text(
+            json.dumps(
+                {
+                    "lock_sha256": lock_hash,
+                    "repo_commit": repo_commit,
+                    "repo_root": str(root),
+                    "mode": mode,
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         temporary.replace(marker)
 os.chdir(root)
 os.execv(
