@@ -259,6 +259,7 @@ async def test_acquire_creates_overlay_and_returns_guest_handle(
     start_call = next(call for call in docker_calls if call[:2] == ("run", "-d"))
     assert "--pull=missing" in start_call
     assert "--device=/dev/kvm" in start_call
+    assert "--device=/dev/net/tun" in start_call
     assert f"type=bind,src={base_qcow2},dst=/images/base.qcow2,readonly" in start_call
     assert f"type=bind,src={exchange_dir},dst=/shared" in start_call
     assert "RAM_SIZE=8G" in start_call

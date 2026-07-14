@@ -40,6 +40,7 @@ docker push agentslastexam/ale-qemu:latest
 - `/storage/data.qcow2` must be a non-empty pre-baked guest disk.
 - The disk and every backing file must be readable when the container starts.
 - `/dev/kvm` must be passed through.
+- `/dev/net/tun` must be passed through for the guest network.
 - `NET_ADMIN` is required for the guest bridge and NAT rules.
 - `/shared` may be bind-mounted to expose a per-run host exchange directory
   through Dockur's guest-only Samba share.

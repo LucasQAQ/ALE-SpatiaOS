@@ -706,6 +706,12 @@ class QemuProvider(Provider):
                     "qemu provider requires /dev/kvm. Enable hardware or nested "
                     "virtualization on the host."
                 )
+            tun = Path("/dev/net/tun")
+            if not tun.exists():
+                raise RuntimeError(
+                    "qemu provider requires /dev/net/tun for guest networking. "
+                    "Enable the TUN device on the host."
+                )
             await _run_docker("version", "--format", "{{.Server.Version}}")
             self._preflight_done = True
 
@@ -1231,6 +1237,7 @@ class QemuProvider(Provider):
             "--label",
             f"io.agents-last-exam.task={task_id or 'unknown'}",
             "--device=/dev/kvm",
+            "--device=/dev/net/tun",
             "--cap-add",
             "NET_ADMIN",
             f"--shm-size={snapshot.shm_size}",
