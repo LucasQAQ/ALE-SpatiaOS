@@ -41,6 +41,13 @@ pinned). A transient download failure is retried three times with bounded
 backoff. The downloaded asset must match the corresponding pinned SHA-256
 before any vendor binary is replaced.
 
+For the Windows QEMU provider, the host downloads and verifies the release
+asset once, caches it under the provider runtime root, and hard-links it into
+the run's `exchange/` share. The guest reads that staged path from
+`\\host.lan\Data`, so formal runs do not depend on guest access to GitHub.
+Linux QEMU and other sandbox providers retain the verified guest-download
+fallback.
+
 ---
 
 ## 2. Install
@@ -198,6 +205,7 @@ Notes:
 | `patched_binary_url_windows` | str | fork release `…/codex-…-windows-msvc.exe` | Fork Windows binary; used instead of `patched_binary_url` on Windows. `""` = skip |
 | `patched_binary_sha256` | str | pinned release digest | SHA-256 required for the Linux fork asset |
 | `patched_binary_sha256_windows` | str | pinned release digest | SHA-256 required for the Windows fork asset |
+| `patched_binary_staged_path` | str | `""` | Runtime-populated guest path for a host-verified QEMU exchange asset; empty uses the network fallback |
 | `model_catalog_path` | str | `""` | Host path to a Codex model-catalog JSON (for models not in codex's bundled catalog); read + sanitised host-side, shipped into the sandbox |
 | `model_catalog_content` | str | `""` | Auto-populated from `model_catalog_path` (do not set by hand) — carries the catalog text to the in-sandbox deployer |
 | `feature_overrides` | dict | `{}` | `{feature_key: bool}` written to config.toml `[features]`; force-enable/disable codex features (== tool surface). Empty = codex defaults |

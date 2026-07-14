@@ -152,6 +152,21 @@ class SandboxExecutor(BaseExecutor):
         # 2. Make sure work_dir exists on sandbox
         await sb.mkdir(self.work_dir)
 
+        # 2b. Let the deployer stage large pinned public assets through a
+        # provider-owned exchange share before config is serialized. Most
+        # deployers inherit the no-op implementation.
+        try:
+            await deployer_cls.stage_sandbox_assets(
+                config=self.config,
+                sandbox=sb,
+            )
+        except Exception as e:                                      # noqa: BLE001
+            logger.exception("stage_sandbox_assets failed")
+            return AgentRunResult(
+                status="failed",
+                error=f"stage_sandbox_assets: {type(e).__name__}: {e}",
+            )
+
         # 3. Reset stale state from any prior attempt (best-effort)
         await sb.rm([pid_file, result_path, done_marker, entry_log, secrets_path])
 

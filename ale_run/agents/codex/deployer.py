@@ -7,6 +7,8 @@ stock from NPM first if nothing is on PATH), else skips the download. The fork =
 openai/codex ``main`` + Windows ``apply_patch.exe`` fix + OpenRouter MCP
 adaptation (see CodexConfig). Transient release downloads use bounded retries;
 the asset SHA-256 is verified before either npm vendor binary is replaced.
+QEMU runs stage the verified asset through the provider exchange share so the
+guest does not need GitHub access.
 
 OpenRouter routing: ``OPENROUTER_API_KEY`` + ``config.toml`` with
 ``model_provider = "openrouter"`` and a custom model_providers block. Direct
@@ -38,6 +40,7 @@ from ale_run.base_interface import (
     ContentPart,
     ImageSource,
     Observation,
+    SandboxHandle,
     StepMetrics,
     ToolCall,
     ToolResult,
@@ -86,6 +89,69 @@ def _file_sha256(path: str) -> str:
     return digest.hexdigest()
 
 
+def _download_pinned_asset(url: str, expected_sha256: str, destination: str) -> None:
+    result = None
+    for attempt in range(1, _PATCH_DOWNLOAD_ATTEMPTS + 1):
+        result = subprocess.run(
+            [
+                "curl", "-fsSL", "--connect-timeout", "60",
+                "--max-time", "600", "-o", destination, url,
+            ],
+            capture_output=True, text=True, timeout=630,
+        )
+        if result.returncode == 0:
+            break
+        logger.warning(
+            "codex: pinned binary download attempt %d/%d failed "
+            "from %s (rc=%d): %s",
+            attempt, _PATCH_DOWNLOAD_ATTEMPTS, url, result.returncode,
+            (result.stderr or "")[:300],
+        )
+        if attempt < _PATCH_DOWNLOAD_ATTEMPTS:
+            time.sleep(_PATCH_DOWNLOAD_BACKOFF_S * attempt)
+    if result is None or result.returncode != 0:
+        raise RuntimeError(
+            "codex: failed to download the pinned fork binary after "
+            f"{_PATCH_DOWNLOAD_ATTEMPTS} attempts: {(result.stderr or '')[:300]}"
+        )
+
+    actual_sha256 = _file_sha256(destination)
+    if actual_sha256.lower() != expected_sha256.lower():
+        raise RuntimeError(
+            "codex: downloaded fork binary SHA-256 mismatch "
+            f"(expected {expected_sha256.lower()}, got {actual_sha256})"
+        )
+
+
+def _ensure_cached_asset(
+    url: str,
+    expected_sha256: str,
+    destination: Path,
+) -> None:
+    if destination.is_file() and _file_sha256(str(destination)) == expected_sha256.lower():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix="codex-asset-", dir=destination.parent)
+    os.close(fd)
+    try:
+        _download_pinned_asset(url, expected_sha256, temporary)
+        os.chmod(temporary, 0o644)
+        os.replace(temporary, destination)
+    finally:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+
+
+def _link_or_copy(source: Path, destination: Path) -> None:
+    destination.unlink(missing_ok=True)
+    try:
+        os.link(source, destination)
+    except OSError:
+        shutil.copy2(source, destination)
+
+
 class CodexDeployer(BaseAgentDeployer):
     """Stdlib-only deployer for the OpenAI ``codex`` CLI."""
 
@@ -111,6 +177,68 @@ class CodexDeployer(BaseAgentDeployer):
         """
         cfg: CodexConfig = self.config  # type: ignore[assignment]
         return getattr(cfg, "fork_version", None) or self._PINNED_VERSION
+
+    @classmethod
+    async def stage_sandbox_assets(
+        cls,
+        *,
+        config: CodexConfig,
+        sandbox: SandboxHandle,
+    ) -> None:
+        if sandbox.metadata.get("provider") != "qemu":
+            return
+        if sandbox.is_linux:
+            return
+        exchange_value = sandbox.metadata.get("exchange_host_dir")
+        share_value = sandbox.metadata.get("exchange_guest_share")
+        slot_value = sandbox.metadata.get("slot_root")
+        if not exchange_value or not share_value or not slot_value:
+            raise RuntimeError("codex: QEMU exchange metadata is incomplete")
+
+        exchange_dir = Path(str(exchange_value)).resolve()
+        slot_root = Path(str(slot_value)).resolve()
+        if not exchange_dir.is_relative_to(slot_root):
+            raise RuntimeError("codex: QEMU exchange directory escapes its runtime slot")
+
+        url = (
+            config.patched_binary_url if sandbox.is_linux
+            else config.patched_binary_url_windows
+        )
+        expected_sha256 = (
+            config.patched_binary_sha256 if sandbox.is_linux
+            else config.patched_binary_sha256_windows
+        )
+        if not url or not expected_sha256:
+            return
+        normalized_sha256 = expected_sha256.lower()
+        if len(normalized_sha256) != 64 or any(
+            character not in "0123456789abcdef" for character in normalized_sha256
+        ):
+            raise RuntimeError("codex: pinned binary SHA-256 must be 64 hexadecimal characters")
+
+        cache_root = slot_root.parents[1] / "assets" / "codex"
+        cached_asset = cache_root / normalized_sha256
+        await asyncio.to_thread(
+            _ensure_cached_asset,
+            url,
+            expected_sha256,
+            cached_asset,
+        )
+
+        exchange_dir.mkdir(parents=True, exist_ok=True)
+        staged_name = f"codex-{normalized_sha256}.bin"
+        await asyncio.to_thread(
+            _link_or_copy,
+            cached_asset,
+            exchange_dir / staged_name,
+        )
+        separator = "/" if sandbox.is_linux else "\\"
+        guest_share = str(share_value).rstrip("/\\")
+        config.patched_binary_staged_path = f"{guest_share}{separator}{staged_name}"
+        logger.info(
+            "codex: staged pinned binary %s through QEMU exchange",
+            normalized_sha256,
+        )
 
     # =========================================================================
     # install
@@ -177,12 +305,18 @@ class CodexDeployer(BaseAgentDeployer):
 
         # 2. Overlay the fork native binary when needed (missing/stale/stock).
         if need_overlay:
-            if not patched_url or not patched_sha256:
+            if not patched_sha256 or (
+                not cfg.patched_binary_staged_path and not patched_url
+            ):
                 raise RuntimeError(
-                    "codex: need the fork binary but its URL or SHA-256 is empty "
+                    "codex: need the fork binary but its source or SHA-256 is empty "
                     f"(running codex is not pinned {cfg.fork_version})"
                 )
-            await self._replace_native_binary(patched_url, patched_sha256)
+            await self._replace_native_binary(
+                patched_url,
+                patched_sha256,
+                cfg.patched_binary_staged_path,
+            )
 
         # 3. Verify codex --version is now the pinned fork (ensure latest or fail
         # loudly — never silently run a stale build).
@@ -256,7 +390,12 @@ class CodexDeployer(BaseAgentDeployer):
             if npm_bin and npm_bin not in os.environ.get("PATH", ""):
                 os.environ["PATH"] = f"{npm_bin}{sep}{os.environ.get('PATH', '')}"
 
-    async def _replace_native_binary(self, url: str, expected_sha256: str) -> None:
+    async def _replace_native_binary(
+        self,
+        url: str,
+        expected_sha256: str,
+        staged_source: str = "",
+    ) -> None:
         """Download a verified patched binary and replace the vendor copy.
 
         Tries both the top-level and nested npm vendor paths. On Linux,
@@ -278,37 +417,21 @@ class CodexDeployer(BaseAgentDeployer):
         fd, staged = tempfile.mkstemp(prefix="codex-patched-", suffix=".bin")
         os.close(fd)
         try:
-            dl = None
-            for attempt in range(1, _PATCH_DOWNLOAD_ATTEMPTS + 1):
-                dl = await asyncio.to_thread(
-                    subprocess.run,
-                    [
-                        "curl", "-fsSL", "--connect-timeout", "60",
-                        "--max-time", "600", "-o", staged, url,
-                    ],
-                    capture_output=True, text=True, timeout=630,
-                )
-                if dl.returncode == 0:
-                    break
-                logger.warning(
-                    "codex: pinned binary download attempt %d/%d failed "
-                    "from %s (rc=%d): %s",
-                    attempt, _PATCH_DOWNLOAD_ATTEMPTS, url, dl.returncode,
-                    (dl.stderr or "")[:300],
-                )
-                if attempt < _PATCH_DOWNLOAD_ATTEMPTS:
-                    await asyncio.sleep(_PATCH_DOWNLOAD_BACKOFF_S * attempt)
-            if dl is None or dl.returncode != 0:
-                raise RuntimeError(
-                    "codex: failed to download the pinned fork binary after "
-                    f"{_PATCH_DOWNLOAD_ATTEMPTS} attempts: {(dl.stderr or '')[:300]}"
-                )
-
-            actual_sha256 = await asyncio.to_thread(_file_sha256, staged)
-            if actual_sha256.lower() != expected_sha256.lower():
-                raise RuntimeError(
-                    "codex: downloaded fork binary SHA-256 mismatch "
-                    f"(expected {expected_sha256.lower()}, got {actual_sha256})"
+            if staged_source:
+                await asyncio.to_thread(shutil.copyfile, staged_source, staged)
+                actual_sha256 = await asyncio.to_thread(_file_sha256, staged)
+                if actual_sha256.lower() != expected_sha256.lower():
+                    raise RuntimeError(
+                        "codex: staged fork binary SHA-256 mismatch "
+                        f"(expected {expected_sha256.lower()}, got {actual_sha256})"
+                    )
+                logger.info("codex: using host-staged pinned binary at %s", staged_source)
+            else:
+                await asyncio.to_thread(
+                    _download_pinned_asset,
+                    url,
+                    expected_sha256,
+                    staged,
                 )
 
             if not is_linux:

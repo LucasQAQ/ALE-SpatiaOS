@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     # public signatures. Same-package TYPE_CHECKING keeps the cycle from
     # surfacing at runtime; type-checkers see both directions.
     from .executor import BaseExecutor
+    from .sandbox import SandboxHandle
 
 
 # =============================================================================
@@ -118,6 +119,21 @@ class BaseAgentDeployer(abc.ABC):
     def __init__(self, executor: BaseExecutor):
         self.executor = executor
         self.config = executor.config        # convenience alias
+
+    @classmethod
+    async def stage_sandbox_assets(
+        cls,
+        *,
+        config: Any,
+        sandbox: "SandboxHandle",
+    ) -> None:
+        """Stage optional host-owned assets before sandbox config serialization.
+
+        The default is a no-op. Deployers may use a provider-owned exchange
+        share for large, pinned public binaries that should not depend on guest
+        internet access. Secrets and task inputs do not belong in this hook.
+        """
+        return None
 
     # ---- abstract methods ----
 

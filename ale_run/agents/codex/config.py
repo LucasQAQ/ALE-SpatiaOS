@@ -132,6 +132,10 @@ class CodexConfig:
     patched_binary_sha256: str = _DEFAULT_PATCHED_BINARY_SHA256
     patched_binary_sha256_windows: str = _DEFAULT_PATCHED_BINARY_SHA256_WINDOWS
 
+    # Runtime-populated guest path for a host-verified asset staged through a
+    # provider-owned exchange share. Empty keeps the guest download fallback.
+    patched_binary_staged_path: str = ""
+
     # Pinned fork version the running ``codex`` must report (``codex --version``).
     # The deployer ensures the engine is exactly this build: if no codex is on
     # PATH it installs stock + overlays the fork; if a codex is present but its

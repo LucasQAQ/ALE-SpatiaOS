@@ -33,6 +33,11 @@ retried, and the selected asset must match its pinned SHA-256 before either npm
 vendor binary is replaced. Replacement is a no-op when the matching URL is
 empty.
 
+Windows QEMU runs stage the verified binary through the provider's host/guest
+exchange share and reuse a digest-keyed host cache. This removes guest GitHub
+access from the formal runtime path. Linux QEMU and non-QEMU sandboxes retain
+the verified network fallback.
+
 ## Providers
 
 | Provider | Auth | Model ID |
@@ -77,6 +82,7 @@ Config fields (standalone dataclass):
 | `patched_binary_url_windows` | str | `""` | GitHub Release URL for patched Windows binary (`codex.exe`, windows-msvc); used instead of `patched_binary_url` on Windows |
 | `patched_binary_sha256` | str | pinned release digest | SHA-256 for the Linux release asset |
 | `patched_binary_sha256_windows` | str | pinned release digest | SHA-256 for the Windows release asset |
+| `patched_binary_staged_path` | str | `""` | Runtime-populated guest path for a host-verified QEMU exchange asset |
 
 ## Logs
 
