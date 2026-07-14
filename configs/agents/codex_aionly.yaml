@@ -1,0 +1,20 @@
+# Codex CLI routed through AIOnly's Responses-compatible endpoint.
+# The Data Layer adapter maps AIONLY_API_KEY to the generic provider env only
+# for this explicit profile; the secret is never serialized into this config.
+
+id: codex_aionly
+harness: codex
+model: gpt-5.5
+
+config:
+  provider: openrouter
+  base_url: https://api.aionly.com/v1
+  api_key: null
+  sandbox_mode: danger-full-access
+  yolo: true
+  otel_enabled: true
+  reasoning_effort: high
+  codex_version: "0.114.0"
+  patched_binary_url: https://github.com/cua-verse/codex/releases/download/v0.0.0-agenthle-20260614/codex
+  patched_binary_url_windows: https://github.com/cua-verse/codex/releases/download/v0.0.0-agenthle-20260614/codex-x86_64-pc-windows-msvc.exe
+  fork_version: "0.0.0-agenthle-20260614"

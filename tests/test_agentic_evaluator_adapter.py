@@ -68,6 +68,28 @@ def test_qemu_agentic_profile_uses_external_pinned_cache(tmp_path, monkeypatch):
     assert windows["runner_image"] == "agentslastexam/ale-qemu:0.2.0"
 
 
+def test_aionly_codex_profile_routes_without_serializing_the_key(tmp_path, monkeypatch):
+    from ale_run.orchestration.config_loader import load_experiment
+
+    monkeypatch.setenv("ALE_QEMU_ROOT", str(tmp_path / "qemu-cache"))
+    payload = request()
+    payload.update({
+        "tasks": ["engineering/robotics_blender_tabletop_reconstruction"],
+        "method": adapter.AIONLY_CODEX_PROFILE,
+        "model": "openai/gpt-5.5",
+        "environment_profile": "qemu_agentic",
+    })
+
+    experiment = load_experiment(adapter.materialize_experiment(ROOT, tmp_path / "native", payload))
+    agent = experiment.agents[0]
+    assert agent.id == "codex_aionly"
+    assert agent.class_ == "codex"
+    assert agent.config["model"] == "gpt-5.5"
+    assert agent.config["provider"] == "openrouter"
+    assert agent.config["base_url"] == "https://api.aionly.com/v1"
+    assert agent.config["api_key"] is None
+
+
 def test_native_environment_maps_only_the_ale_scoped_hf_token():
     environment = adapter.native_environment({"ALE_HF_TOKEN": "scoped", "PATH": "/bin"})
     assert environment["HF_TOKEN"] == "scoped"
@@ -77,6 +99,25 @@ def test_native_environment_maps_only_the_ale_scoped_hf_token():
     existing = adapter.native_environment({"ALE_HF_TOKEN": "scoped", "HF_TOKEN": "native"})
     assert existing["HF_TOKEN"] == "native"
     assert "ALE_HF_TOKEN" not in existing
+
+
+def test_native_environment_maps_aionly_only_for_its_explicit_profile():
+    environment = adapter.native_environment(
+        {"AIONLY_API_KEY": "aionly", "OPENROUTER_API_KEY": "openrouter"},
+        method=adapter.AIONLY_CODEX_PROFILE,
+    )
+    assert environment["OPENROUTER_API_KEY"] == "aionly"
+    assert "AIONLY_API_KEY" not in environment
+
+    ordinary = adapter.native_environment(
+        {"AIONLY_API_KEY": "aionly", "OPENROUTER_API_KEY": "openrouter"},
+        method="codex",
+    )
+    assert ordinary["OPENROUTER_API_KEY"] == "openrouter"
+    assert "AIONLY_API_KEY" not in ordinary
+
+    with pytest.raises(adapter.ContractError, match="AIONLY_API_KEY"):
+        adapter.native_environment({}, method=adapter.AIONLY_CODEX_PROFILE)
 
 
 def test_request_rejects_arbitrary_paths_and_case_indices(tmp_path):

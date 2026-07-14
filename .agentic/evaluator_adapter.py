@@ -22,6 +22,7 @@ RESULT_SCHEMA = "agentic-evaluator-result-v1"
 SAFE_PROFILE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 SAFE_TASK = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,255}$")
 SAFE_MODEL = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:/+-]{0,255}$")
+AIONLY_CODEX_PROFILE = "codex_aionly"
 
 
 class ContractError(ValueError):
@@ -120,7 +121,7 @@ def materialize_experiment(repo_root: Path, native_root: Path, request: dict[str
 
     raw_agent = yaml.safe_load(source_agent.read_text(encoding="utf-8"))
     agent = _object(raw_agent, f"agent profile {method}")
-    agent["model"] = model
+    agent["model"] = model.removeprefix("openai/") if method == AIONLY_CODEX_PROFILE else model
     input_root = native_root / "adapter-inputs"
     input_root.mkdir(parents=True, exist_ok=True)
     generated_agent = input_root / "agent.yaml"
@@ -149,12 +150,21 @@ def build_native_command(repo_root: Path, experiment_path: Path) -> list[str]:
     ]
 
 
-def native_environment(source: dict[str, str] | None = None) -> dict[str, str]:
-    """Map the adapter-scoped image credential to Hugging Face's native name."""
+def native_environment(
+    source: dict[str, str] | None = None,
+    *,
+    method: str | None = None,
+) -> dict[str, str]:
+    """Map adapter-scoped credentials to the native runner's expected names."""
     environment = dict(source if source is not None else os.environ)
     ale_token = environment.pop("ALE_HF_TOKEN", "")
     if ale_token and not environment.get("HF_TOKEN"):
         environment["HF_TOKEN"] = ale_token
+    aionly_key = environment.pop("AIONLY_API_KEY", "")
+    if method == AIONLY_CODEX_PROFILE:
+        if not aionly_key:
+            raise ContractError(f"{AIONLY_CODEX_PROFILE} requires AIONLY_API_KEY")
+        environment["OPENROUTER_API_KEY"] = aionly_key
     return environment
 
 
@@ -314,7 +324,7 @@ def run(request_path: Path, repo_root: Path) -> int:
             stderr=stderr,
             text=True,
             check=False,
-            env=native_environment(),
+            env=native_environment(method=str(request["method"])),
         )
     manifest = write_manifest(native_root, repo_root, request, completed.returncode)
     return 0 if manifest["status"] != "failed" else 1
