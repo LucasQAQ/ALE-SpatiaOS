@@ -76,7 +76,15 @@ with lock_file.open("a+", encoding="utf-8") as handle:
             ready = False
     if not ready:
         child_env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(environment / ".venv")}
-        sync_command = [str(resolve_uv_binary()), "sync", "--frozen"]
+        # The wrapper executes source from this pinned checkout. Installing the
+        # workspace itself adds a redundant PEP 517 build and an untracked
+        # hatchling network fetch for every new integration commit.
+        sync_command = [
+            str(resolve_uv_binary()),
+            "sync",
+            "--frozen",
+            "--no-install-workspace",
+        ]
         if mode == "full":
             sync_command.insert(2, "--all-packages")
         completed = subprocess.run(
@@ -102,6 +110,7 @@ with lock_file.open("a+", encoding="utf-8") as handle:
         )
         temporary.replace(marker)
 os.chdir(root)
+os.environ["PYTHONPATH"] = str(root)
 os.execv(
     python,
     [
